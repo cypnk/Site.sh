@@ -1,0 +1,16 @@
+Options +FollowSymLinks
+RewriteEngine on
+
+# All requests to /data folder
+RewriteCond %{REQUEST_URI} ^/data [NC]
+
+# All requests to readme files
+RewriteCond %{REQUEST_URI} ^/readme [NC]
+RewriteRule ^.*$ /site.sh [L,QSA]
+
+# All files and folders that don't exist
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+# Send to /index.php (including any query strings added at the end)
+RewriteRule ^.*$ /site.sh [L,QSA]
