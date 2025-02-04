@@ -2,17 +2,18 @@
 
 # Globals
 
-# Client headers
-typeset -A headers
+# Client request
+typeset -A request
+
+# Page request path properties
+typeset -A query
 
 # Form submisisons
 typeset -A form_data
 
-# Page request paths
-typeset -A archive
-
 # Render templates
 typeset -A templates
+
 
 temp=$(cat <<'HTML'
 <!DOCTYPE html>
@@ -101,6 +102,18 @@ templates[tpl_noresults]="$temp"
 
 temp=$(cat <<'HTML'
 <html>
+<head><title>Method Not Allowed</title></head>
+<body>
+<h1>Not Allowed</h1>
+<p>The request method you have used is not supported</p>
+</body>
+</html>
+HTML
+)
+templates[tpl_nomethod]="$temp"
+
+temp=$(cat <<'HTML'
+<html>
 <head><title>Forbidden</title></head>
 <body>
 <h1>Access Denied</h1>
@@ -139,16 +152,20 @@ t() {
 	fi
 }
 
-# Load HTTP headers sent by the visitor
-loadHeaders() {
+# Load HTTP request params and headers sent by the visitor
+loadRequest() {
 	# Loop through environment variables and extract headers
-	for header in $(env | grep -i "HTTP_"); do
+	for request in $(env | grep -i "HTTP_"); do
 		key=$(echo $header | cut -d= -f1 | sed 's/HTTP_//g' | tr 'A-Z' 'a-z' | tr '_' '-')
 		value=$(echo $header | cut -d= -f2)
 		
 		# Store in the associative array
-		headers["$key"]="$value"
+		request["$key"]="$value"
 	done
+	
+	# Query params
+	request["verb"]=$(echo $REQUEST_METHOD | tr '[:lower:]' '[:upper:]')
+	request["uri"]=$REQUEST_URI
 }
 
 # Static headers
@@ -156,19 +173,22 @@ preamble() {
 	local code=$1
 	local ctype=$2
 	
-	if ( "$code" = 200 ) {
+	if [[ "$code" = 200 ]]; then
 		echo "Status: 200 OK"
-	} elif ( "$code" = 403 ) {
+	elif [[ "$code" = 403 ]]; then
 		echo "Status: 403 Forbidden"
-	} else {
+	elif [[ "$code" = 405 ]]; then
+		echo "Status: 405 Method Not Allowed"
+	else
 		echo "Status: 404 Not Found"
-	}
+	fi
 	
-	if ( "$ctype" = 'text' ) {
+	if [[ "$ctype" = 'text' ]]; then
 		echo "Content-type: text/plain"
-	} else {
+	elif [[ "$ctype" = 'none' ]]; then
+		# Do nothing
+	else
 		echo "Content-type: text/html"
-	}
 	echo
 }
 
@@ -192,6 +212,13 @@ sendNotFound() {
 	exit
 }
 
+# Method not allowed
+sendNotAllowed() {
+	preamble 405
+	echo "${templates[tpl_nomethod]}"
+	exit
+}
+
 # Forbidden page
 sendDenied() {
 	preamble 403
@@ -204,24 +231,24 @@ archiveUri() {
 	local uri=$1
 	
 	# Search sent
-	archive[search]=$(echo "$uri" | sed -E 's|^/\?search=([^/]+)(/.*)?$|\1|')
+	query[search]=$(echo "$uri" | sed -E 's|^/\?search=([^/]+)(/.*)?$|\1|')
 	
 	# Last, "page" prefixed, string segment
-	archive[page]=$(echo "$uri" | sed -E 's|.*/page([1-9][0-9]{0,2})$|\1|')
+	query[page]=$(echo "$uri" | sed -E 's|.*/page([1-9][0-9]{0,2})$|\1|')
 	
 	# Static entry E.G. "about"
-	archive[article]=$(echo "$uri" | sed -E 's|^/([a-zA-Z0-9_-\/]{1,255})$|\1|')
+	query[article]=$(echo "$uri" | sed -E 's|^/([a-zA-Z0-9_-\/]{1,255})$|\1|')
 	
 	# If not searching, try archive
-	if [ -z "${archive[search]}" ]; then
-		archive[year]=$(echo "$uri" | sed -E 's|^/([0-9]{4})(/.*)?$|\1|')
-		archive[month]=$(echo "$uri" | sed -E 's|^/[0-9]{4}/([0-9]{2})(/.*)?$|\1|')
-		archive[day]=$(echo "$uri" | sed -E 's|^/[0-9]{4}/[0-9]{2}/([0-9]{2})(/.*)?$|\1|')
+	if [ -z "${query[search]}" ]; then
+		query[year]=$(echo "$uri" | sed -E 's|^/([0-9]{4})(/.*)?$|\1|')
+		query[month]=$(echo "$uri" | sed -E 's|^/[0-9]{4}/([0-9]{2})(/.*)?$|\1|')
+		query[day]=$(echo "$uri" | sed -E 's|^/[0-9]{4}/[0-9]{2}/([0-9]{2})(/.*)?$|\1|')
 	fi
 	
 	# If not paged path or search, try "slug" string segment
-	if [ -z "${archive[page]}" ] && [ -z "${archive[search]}" ]; then
-		archive[slug]=$(echo "$uri" | sed -E 's|^/[0-9]{4}/[0-9]{2}/[0-9]{2}/([a-zA-Z0-9_-]{1,255})$|\1|')
+	if [ -z "${query[page]}" ] && [ -z "${query[search]}" ]; then
+		query[slug]=$(echo "$uri" | sed -E 's|^/[0-9]{4}/[0-9]{2}/[0-9]{2}/([a-zA-Z0-9_-]{1,255})$|\1|')
 	fi
 }
 
@@ -235,30 +262,30 @@ formatEntry() {
 	
 }
 
+# TODO
 archivePage() {
 	local uri=$1
 	
-	preamble
-	
 	# At least year required
-	if [ -n "${archive[year]}" ]; then
+	if [ -n "${query[year]}" ]; then
+		preamble
 		
 		# Print year
-		echo "Year: ${archive[year]}"
+		echo "Year: ${query[year]}"
 		
-		if [ -n "${archive[month]}" ]; then
+		if [ -n "${query[month]}" ]; then
 			# Month included
-			echo "Month: ${archive[month]}"
+			echo "Month: ${query[month]}"
 			
-			if [ -n "${archive[day]}" ]; then
+			if [ -n "${query[day]}" ]; then
 				# Day included
-				echo "Day: ${archive[day]}"
+				echo "Day: ${query[day]}"
 			fi
 		fi
 		
 		# Page included
-		if [ -n "${archive[page]}" ]; then
-			echo "Page: ${archive[page]}"
+		if [ -n "${query[page]}" ]; then
+			echo "Page: ${query[page]}"
 		fi
 		
 		exit
@@ -267,6 +294,10 @@ archivePage() {
 
 readArticle() {
 	preamble 200
+	if [[ "${request["verb"]}" == "head" ]]; then
+		exit
+	fi
+	
 	# TODO: Process static article
 	echo "Article"
 	exit
@@ -274,13 +305,21 @@ readArticle() {
 
 readEntry() {
 	preamble 200
+	if [[ "${request["verb"]}" == "head" ]]; then
+		exit
+	fi
+	
 	# TODO: Process entry by permalink
-	echo "/${archive[year]}/${archive[month]}/${archive[day]}/${archive[slug]}"
+	echo "/${query[year]}/${query[month]}/${query[day]}/${query[slug]}"
 	exit
 }
 
 searchPage() {
 	preamble 200
+	if [[ "${request["verb"]}" == "head" ]]; then
+		exit
+	fi
+	
 	# TODO: Process search results
 	echo "${templates[tpl_noresults]}"
 	
@@ -290,6 +329,10 @@ searchPage() {
 
 feedPage() {
 	preamble 200
+	if [[ "${request["verb"]}" == "head" ]]; then
+		exit
+	fi
+	
 	# TODO: Process first few pages
 	echo "${templates[tpl_noresults]}"
 	exit
@@ -300,18 +343,26 @@ feedPage() {
 
 
 # Load client request headers
-loadHeaders
+loadRequest
+
+# Limit request methods
+if [[ "${request["verb"]}" != "head" && 
+	"${request["verb"]}" != "get" && 
+	"${request["verb"]}" != "options" ]]; then
+	sendNotAllowed
+fi
+
 
 # Extract uri segments, if any
-archiveUri "${headers[request_uri]}"
+requestUri "${request[uri]}"
 
 # Search is present
-if [ -n "${archive[search]}" ]; then
+if [ -n "${query[search]}" ]; then
 	searchPage
 fi
 
 # Specific page
-if [ -n "${archive[slug]}" ]; then
+if [ -n "${query[slug]}" ]; then
 	readEntry
 
 # Try to send archive
