@@ -223,7 +223,7 @@ sendNotAllowed() {
 
 # Forbidden page
 sendDenied() {
-	preamble 403 "none"
+	preamble 403
 	echo "${templates[tpl_forbidden]}"
 	exit
 }
@@ -349,7 +349,7 @@ loadRequest
 
 # Filter invalid requests
 if [ -z "${request["host"]}" ] || [ -z "${request["user-agent"]}" ]; then
-	preamble 400
+	preamble 400 "none"
 	exit
 fi
 
