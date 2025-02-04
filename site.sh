@@ -173,8 +173,11 @@ preamble() {
 	local code=$1
 	local ctype=$2
 	
+	# Response code
 	if [[ "$code" = 200 ]]; then
 		echo "Status: 200 OK"
+	elif [[ "$code" = 204 ]]; then
+		echo "Status: 204 No Content"
 	elif [[ "$code" = 403 ]]; then
 		echo "Status: 403 Forbidden"
 	elif [[ "$code" = 405 ]]; then
@@ -185,6 +188,7 @@ preamble() {
 		echo "Status: 404 Not Found"
 	fi
 	
+	# Added content type?
 	if [[ "$ctype" = 'text' ]]; then
 		echo "Content-type: text/plain"
 	elif [[ "$ctype" = 'none' ]]; then
@@ -192,6 +196,22 @@ preamble() {
 	else
 		echo "Content-type: text/html"
 	fi
+}
+
+# Options response
+allowHeaders() {
+	if [ -z $1 ]; then
+		# Regular allow response
+		preamble 204 "none"
+	else
+		# Not allowed response
+		preamble 405 "none"
+	fi
+	
+	dt=$(date -u +"%a, %d %b %Y %H:%M:%S GMT")
+	echo "Allow: OPTIONS, GET, HEAD"
+	echo "Cache-Control: max-age=604800"
+	echo "Date: ${dt}"
 }
 
 # Format HTML templates with placeholder replacement data
@@ -216,7 +236,8 @@ sendNotFound() {
 
 # Method not allowed
 sendNotAllowed() {
-	preamble 405
+	allowHeaders 1
+	echo "Content-type: text/html"
 	echo "${templates[tpl_nomethod]}"
 	exit
 }
@@ -226,6 +247,28 @@ sendDenied() {
 	preamble 403
 	echo "${templates[tpl_forbidden]}"
 	exit
+}
+
+# Response filter
+filter() {
+	# Invalid requests
+	if [ -z "${request["host"]}" ] || [ -z "${request["user-agent"]}" ]; then
+		preamble 400 "none"
+		exit
+	fi
+	
+	# Limit request methods
+	if [[ "${request["verb"]}" != "head" && 
+		"${request["verb"]}" != "get" && 
+		"${request["verb"]}" != "options" ]]; then
+		sendNotAllowed
+	fi
+	
+	# Send options response
+	if [[ "${request["verb"]}" == "options" ]]; then
+		allowHeaders
+		exit
+	fi
 }
 
 # Load archive array with passed URI parameters
@@ -347,19 +390,8 @@ feedPage() {
 # Load client request headers
 loadRequest
 
-# Filter invalid requests
-if [ -z "${request["host"]}" ] || [ -z "${request["user-agent"]}" ]; then
-	preamble 400 "none"
-	exit
-fi
-
-# Limit request methods
-if [[ "${request["verb"]}" != "head" && 
-	"${request["verb"]}" != "get" && 
-	"${request["verb"]}" != "options" ]]; then
-	sendNotAllowed
-fi
-
+# Basic response filter
+filter
 
 # Extract uri segments, if any
 requestUri "${request[uri]}"
