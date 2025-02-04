@@ -227,7 +227,7 @@ sendDenied() {
 }
 
 # Load archive array with passed URI parameters
-archiveUri() {
+requestUri() {
 	local uri=$1
 	
 	# Search sent
