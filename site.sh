@@ -164,7 +164,7 @@ loadRequest() {
 	done
 	
 	# Query params
-	request["verb"]=$(echo $REQUEST_METHOD | tr '[:lower:]' '[:upper:]')
+	request["verb"]=$(echo $REQUEST_METHOD | tr '[:upper:]' '[:lower:]')
 	request["uri"]=$REQUEST_URI
 }
 
@@ -179,6 +179,8 @@ preamble() {
 		echo "Status: 403 Forbidden"
 	elif [[ "$code" = 405 ]]; then
 		echo "Status: 405 Method Not Allowed"
+	elif [[ "$code" = 400 ]]; then
+		echo "Status: 400 Bad Request"
 	else
 		echo "Status: 404 Not Found"
 	fi
@@ -186,10 +188,10 @@ preamble() {
 	if [[ "$ctype" = 'text' ]]; then
 		echo "Content-type: text/plain"
 	elif [[ "$ctype" = 'none' ]]; then
-		# Do nothing
+		: # Do nothing
 	else
 		echo "Content-type: text/html"
-	echo
+	fi
 }
 
 # Format HTML templates with placeholder replacement data
@@ -221,7 +223,7 @@ sendNotAllowed() {
 
 # Forbidden page
 sendDenied() {
-	preamble 403
+	preamble 403 "none"
 	echo "${templates[tpl_forbidden]}"
 	exit
 }
@@ -344,6 +346,12 @@ feedPage() {
 
 # Load client request headers
 loadRequest
+
+# Filter invalid requests
+if [ -z "${request["host"]}" ] || [ -z "${request["user-agent"]}" ]; then
+	preamble 400
+	exit
+fi
 
 # Limit request methods
 if [[ "${request["verb"]}" != "head" && 
