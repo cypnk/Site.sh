@@ -152,12 +152,21 @@ t() {
 	fi
 }
 
+# Local associative array helper
+array() {
+	if [[ -n "$KSH_VERSION" ]]; then
+		typeset -A "$1"
+	else
+		declare -A "$1"
+	fi
+}
+
 # Load HTTP request params and headers sent by the visitor
 loadRequest() {
 	# Loop through environment variables and extract headers
 	for request in $(env | grep -i "HTTP_"); do
-		key=$(echo $header | cut -d= -f1 | sed 's/HTTP_//g' | tr 'A-Z' 'a-z' | tr '_' '-')
-		value=$(echo $header | cut -d= -f2)
+		local key=$(echo $header | cut -d= -f1 | sed 's/HTTP_//g' | tr 'A-Z' 'a-z' | tr '_' '-')
+		local value=$(echo $header | cut -d= -f2)
 		
 		# Store in the associative array
 		request["$key"]="$value"
@@ -216,10 +225,12 @@ allowHeaders() {
 
 # Format HTML templates with placeholder replacement data
 render() {
-	local $tpl="$1"
-	local $out="$tpl"
+	local tpl="$1"
+	local out="$tpl"
+	local data
 	
-	typeset -A data
+	array data
+	
 	eval "data=($2)"
 	for key in "${!data[@]}"; do
 		out=$(echo "$out" | sed "s|{$key}|${data[$key]}|g")
@@ -337,48 +348,46 @@ archivePage() {
 	fi	
 }
 
+# TODO: Process static article
 readArticle() {
 	preamble 200
 	if [[ "${request["verb"]}" == "head" ]]; then
 		exit
 	fi
 	
-	# TODO: Process static article
 	echo "Article"
 	exit
 }
 
+# TODO: Process entry by permalink
 readEntry() {
 	preamble 200
 	if [[ "${request["verb"]}" == "head" ]]; then
 		exit
 	fi
 	
-	# TODO: Process entry by permalink
 	echo "/${query[year]}/${query[month]}/${query[day]}/${query[slug]}"
 	exit
 }
 
+# TODO: Process search results
 searchPage() {
 	preamble 200
 	if [[ "${request["verb"]}" == "head" ]]; then
 		exit
 	fi
 	
-	# TODO: Process search results
 	echo "${templates[tpl_noresults]}"
-	
-	
 	exit
 }
 
+# TODO: Process first few pages
 feedPage() {
 	preamble 200
 	if [[ "${request["verb"]}" == "head" ]]; then
 		exit
 	fi
 	
-	# TODO: Process first few pages
 	echo "${templates[tpl_noresults]}"
 	exit
 }
