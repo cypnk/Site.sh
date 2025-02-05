@@ -164,7 +164,7 @@ array() {
 # Load HTTP request params and headers sent by the visitor
 loadRequest() {
 	# Loop through environment variables and extract headers
-	for request in $(env | grep -i "HTTP_"); do
+	for header in $(env | grep -i "HTTP_"); do
 		local key=$(echo $header | cut -d= -f1 | sed 's/HTTP_//g' | tr 'A-Z' 'a-z' | tr '_' '-')
 		local value=$(echo $header | cut -d= -f2)
 		
