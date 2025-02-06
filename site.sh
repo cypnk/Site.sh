@@ -3,18 +3,58 @@
 # Globals
 
 # Client request
-typeset -A request
+request
 
 # Page request path properties
-typeset -A query
+query
 
 # Form submisisons
-typeset -A form_data
+form_data
 
 # Render templates
-typeset -A templates
+templates
 
 
+# Helper functions
+
+
+# Ternary helper
+t() {
+	if [ "$1" ]; then
+		echo "$2"
+	else
+		echo "$3"
+	fi
+}
+
+# Test if the current shell is Korn or Bash
+isKsh() {
+	if [[ -n "$KSH_VERSION" ]]; then
+		return 0
+	fi
+	
+	# Probably Bash
+	return 1
+}
+
+# Local associative array helper
+array() {
+	local arr="$1"
+	
+	isKsh
+	if [[ $? -eq 0 ]]; then
+		eval "typeset -A $arr"
+	else
+		eval "declare -A $arr"
+	fi
+}
+
+
+
+# Templates
+
+
+array templates
 temp=$(cat <<'HTML'
 <!DOCTYPE html>
 <html>
@@ -140,29 +180,14 @@ templates[tpl_notfound]="$temp"
 
 
 
-# Functions
+# Client IO
 
 
-# Ternary helper
-t() {
-	if [ "$1" ]; then
-		echo "$2"
-	else
-		echo "$3"
-	fi
-}
-
-# Local associative array helper
-array() {
-	if [[ -n "$KSH_VERSION" ]]; then
-		typeset -A "$1"
-	else
-		declare -A "$1"
-	fi
-}
 
 # Load HTTP request params and headers sent by the visitor
 loadRequest() {
+	array request
+	
 	# Loop through environment variables and extract headers
 	for header in $(env | grep -i "HTTP_"); do
 		local key=$(echo $header | cut -d= -f1 | sed 's/HTTP_//g' | tr 'A-Z' 'a-z' | tr '_' '-')
@@ -286,6 +311,8 @@ filter() {
 requestUri() {
 	local uri=$1
 	
+	array query
+	
 	# Search sent
 	query[search]=$(echo "$uri" | sed -E 's|^/\?search=([^/]+)(/.*)?$|\1|')
 	
@@ -307,6 +334,84 @@ requestUri() {
 		query[slug]=$(echo "$uri" | sed -E 's|^/[0-9]{4}/[0-9]{2}/[0-9]{2}/([a-zA-Z0-9_-]{1,255})$|\1|')
 	fi
 }
+
+
+
+# Form processing
+
+
+
+# Process form field into associative array
+formField() {
+	local line="$1"
+	local field_name=""
+	local field_value=""
+	
+	isKsh
+	if [[ $? -eq 0 ]]; then
+		# Korn shell, use grep and sed
+		field_name=$(echo "$line" | grep -o 'name="[^"]*"' | sed 's/name="\([^"]*\)"/\1/')
+	else
+		# Or in Bash
+		if [[ "$line" =~ Content-Disposition.*name=\"([^\"]+)\" ]]; then
+			field_name="${BASH_REMATCH[1]}"
+		fi
+	fi
+	
+	# Invalid field name?
+	if [[ -z "$field_name" ]]; then
+		return 1
+	fi
+	
+	if [[ "$line" =~ "filename=" ]]; then
+		local filename=$(echo "$line" | sed 's/.*filename="\(.*\)"/\1/')
+		local tmpfile=$(mktemp)
+		
+		# TODO: Refine file uploading 
+		form_data["$field_name"]="$tmpfile:$filename"
+		while read -r upload; do
+			echo "$upload" >> "$tmpfile"
+		done
+	else
+		read -r field_value
+		form_data["$field_name"]="$field_value"
+	fi
+	
+	return 0
+}
+
+# Process multipart form data
+formData() {
+	array form_data
+	
+	local boundary=$(echo "$CONTENT_TYPE" | sed -n 's/^.*boundary=\([^;]*\).*$/\1/p')
+	
+	if [[ -z "$boundary" ]]; then
+		return 1
+	fi
+	
+	while IFS= read -r line; do
+		# Check multipart boundary
+		if [[ "$line" =~ ^--$boundary ]]; then
+			read -r line
+			
+			# Skip file uploads for now
+			if [[ "$line" =~ "Content-Disposition:" && "$line" =~ "filename=" ]]; then
+				while IFS= read -r fline && [[ ! "$fline" =~ ^--$boundary ]]; do
+					continue
+				done
+				continue
+			fi
+			formField "$line"
+			
+			# Something went wrong?
+			if [[ $? -ne 0 ]]; then
+				break
+			fi
+		fi
+	done <&0
+}
+
 
 # TODO
 formatArticle() {
